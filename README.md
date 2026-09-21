@@ -1,7 +1,7 @@
 <img width="1917" height="1017" alt="스크린샷 2026-09-18 141127" src="https://github.com/user-attachments/assets/422ea6b2-7af5-4b2c-9000-0c141c514c09" />
 < 프로그램 사용 스크린샷 >
 
-
+[사용 방법 유튜브 링크](https://youtu.be/necdpUIDmas)
 
 # 🚀 Easy_PeakParser v1.0.0
 
