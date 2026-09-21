@@ -2,4 +2,4 @@ cd C:\Users\hwang\Documents\GitHub\2026_tuk_spoes\MFC_SetPT
 
 python -m PyInstaller --noconsole --onefile --collect-data tkinterdnd2 Easy_PeakParser.py
 python -m PyInstaller --noconsole --onefile --icon=Easy_PeakParser.ico --collect-data tkinterdnd2 Easy_PeakParser.py
-python -m PyInstaller --noconsole --onefile --icon=Easy_PeakParser.ico --add-data "Easy_PeakParser.ico;." --collect-data tkinterdnd2 --distpath . -n Easy_PeakParser_v1.0.0 Easy_PeakParser.py
+python -m PyInstaller --noconsole --onefile --icon=Easy_PeakParser.ico --add-data "Easy_PeakParser.ico;." --collect-data tkinterdnd2 --distpath . -n Easy_PeakParser_v1.0.1 Easy_PeakParser.py

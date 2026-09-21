@@ -201,8 +201,10 @@ def process_data():
             fail_list.append(f"{os.path.basename(peak_file)} (시간대가 일치하는 MFC 기록 없음)")
             continue
 
+        # 어설픈 사전 필터링 제거! 실제 시간대가 맞는 블록 내에서만 0 SCCM을 판단합니다.
         blocks_to_write = []
         used_red_indices = set()
+        processed_events = []
 
         for e in matched_events:
             red_idx = -1
@@ -213,6 +215,7 @@ def process_data():
                     break
             
             if red_idx != -1:
+                # 파장 데이터와 MFC 제어 시간 차이가 60초 이내인 정상 데이터만 처리
                 if abs((e['time'] - data_rows[red_idx]['dt']).total_seconds()) > 60:
                     continue
                 
@@ -228,16 +231,25 @@ def process_data():
                         'label': label,
                         'block': block
                     })
+                    processed_events.append(e)
+
+                    # [핵심 로직] 성공적으로 기록된 유효 이벤트의 셋포인트가 0 SCCM이라면, 여기서 한 사이클을 완벽히 종료
+                    if prev_val == 0:
+                        break
 
         if not blocks_to_write:
             fail_list.append(f"{os.path.basename(peak_file)} (매칭된 유효 데이터 없음)")
             continue
 
-        bg_gas = matched_events[0]['bg_gas']
-        bg_flow = matched_events[0]['bg_flow']
-        ctrl_gas = matched_events[0]['ctrl_gas']
-        max_ctrl = max(max(e['prev_flow'], e['curr_flow']) for e in matched_events)
-        deltas = [abs(e['curr_flow'] - e['prev_flow']) for e in matched_events if abs(e['curr_flow'] - e['prev_flow']) > 0]
+        # 최댓값과 가스 정보는 매칭에 성공한 첫 번째(시작점) 유효 데이터 기준으로 고정
+        first_event = processed_events[0]
+        bg_gas = first_event['bg_gas']
+        bg_flow = first_event['bg_flow']
+        ctrl_gas = first_event['ctrl_gas']
+        
+        max_ctrl = first_event['prev_flow']
+        
+        deltas = [abs(e['curr_flow'] - e['prev_flow']) for e in processed_events if abs(e['curr_flow'] - e['prev_flow']) > 0]
         delta_val = max(set(deltas), key=deltas.count) if deltas else 0
         delta_str = int(delta_val) if delta_val.is_integer() else delta_val
         
@@ -357,26 +369,37 @@ def process_data():
         messagebox.showinfo("완료", msg)
 
 # ================================
+# 폴더 드래그 앤 드롭 시 하위 CSV 파일까지 재귀 탐색하는 함수
+# ================================
+def process_dropped_paths(paths, target_list):
+    for p in paths:
+        if os.path.isdir(p):
+            for root_dir, _, files in os.walk(p):
+                for file in files:
+                    if file.lower().endswith('.csv'):
+                        full_path = os.path.join(root_dir, file).replace('\\', '/')
+                        if full_path not in target_list:
+                            target_list.append(full_path)
+        elif os.path.isfile(p):
+            if p.lower().endswith('.csv'):
+                p = p.replace('\\', '/')
+                if p not in target_list:
+                    target_list.append(p)
+
+# ================================
 # GUI 리스트박스 관리 함수
 # ================================
 def update_lists():
-    listbox_mfc.delete(0, tk.END); listbox_peak.delete(0, tk.END)
-    for p in mfc_files: listbox_mfc.insert(tk.END, os.path.basename(p))
+    listbox_peak.delete(0, tk.END); listbox_mfc.delete(0, tk.END)
     for p in peak_files: listbox_peak.insert(tk.END, os.path.basename(p))
-
-def drop_mfc(event):
-    for p in root.tk.splitlist(event.data):
-        if p.lower().endswith('.csv') and p not in mfc_files: mfc_files.append(p)
-    update_lists()
+    for p in mfc_files: listbox_mfc.insert(tk.END, os.path.basename(p))
 
 def drop_peak(event):
-    for p in root.tk.splitlist(event.data):
-        if p.lower().endswith('.csv') and p not in peak_files: peak_files.append(p)
+    process_dropped_paths(root.tk.splitlist(event.data), peak_files)
     update_lists()
 
-def browse_mfc():
-    for p in filedialog.askopenfilenames(title="MFC 파일 선택", filetypes=[("CSV", "*.csv")]):
-        if p not in mfc_files: mfc_files.append(p)
+def drop_mfc(event):
+    process_dropped_paths(root.tk.splitlist(event.data), mfc_files)
     update_lists()
 
 def browse_peak():
@@ -384,12 +407,17 @@ def browse_peak():
         if p not in peak_files: peak_files.append(p)
     update_lists()
 
-def remove_mfc():
-    for i in reversed(listbox_mfc.curselection()): del mfc_files[i]
+def browse_mfc():
+    for p in filedialog.askopenfilenames(title="MFC 파일 선택", filetypes=[("CSV", "*.csv")]):
+        if p not in mfc_files: mfc_files.append(p)
     update_lists()
 
 def remove_peak():
     for i in reversed(listbox_peak.curselection()): del peak_files[i]
+    update_lists()
+
+def remove_mfc():
+    for i in reversed(listbox_mfc.curselection()): del mfc_files[i]
     update_lists()
 
 def clear_all():
@@ -415,7 +443,8 @@ THEME_ACTION = "#0078D7"
 THEME_ACTION_ACTIVE = "#005A9E" 
 
 root = TkinterDnD.Tk()
-root.title("Easy_PeakParser v1.0.0")
+# 버전 1.0.1 업데이트 반영
+root.title("Easy_PeakParser v1.0.1")
 root.geometry("720x580") 
 root.iconbitmap(resource_path("Easy_PeakParser.ico"))
 root.configure(bg=THEME_BG) 
@@ -429,23 +458,9 @@ frame_lists.columnconfigure(0, weight=1, uniform="equal_width")
 frame_lists.columnconfigure(1, weight=1, uniform="equal_width")
 frame_lists.rowconfigure(0, weight=1)
 
-# [1. MFC 셋포인트 영역]
-frame_mfc = tk.LabelFrame(frame_lists, text="1. MFC 유량 제어 기록 파일 (*.csv)", bg=THEME_BG, fg=THEME_ACCENT, font=("", 10, "bold"), padx=5, pady=5)
-frame_mfc.grid(row=0, column=0, sticky="nsew", padx=5)
-
-listbox_mfc = tk.Listbox(frame_mfc, selectmode=tk.EXTENDED, height=10, relief="solid", bd=1, selectbackground=THEME_ACTION)
-listbox_mfc.pack(fill="both", expand=True, pady=(0, 5))
-listbox_mfc.drop_target_register(DND_FILES)
-listbox_mfc.dnd_bind('<<Drop>>', drop_mfc)
-
-btn_frame_mfc = tk.Frame(frame_mfc, bg=THEME_BG)
-btn_frame_mfc.pack(fill="x")
-tk.Button(btn_frame_mfc, text="Browse", command=browse_mfc, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
-tk.Button(btn_frame_mfc, text="Remove", command=remove_mfc, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
-
-# [2. 파장 기록 영역]
-frame_peak = tk.LabelFrame(frame_lists, text="2. 파장 기록 파일 (*.csv)", bg=THEME_BG, fg=THEME_ACCENT, font=("", 10, "bold"), padx=5, pady=5)
-frame_peak.grid(row=0, column=1, sticky="nsew", padx=5)
+# [1. 파장 기록 영역 - 좌측 배치]
+frame_peak = tk.LabelFrame(frame_lists, text="1. 파장 기록 파일 (*.csv)", bg=THEME_BG, fg=THEME_ACCENT, font=("", 10, "bold"), padx=5, pady=5)
+frame_peak.grid(row=0, column=0, sticky="nsew", padx=5)
 
 listbox_peak = tk.Listbox(frame_peak, selectmode=tk.EXTENDED, height=10, relief="solid", bd=1, selectbackground=THEME_ACTION)
 listbox_peak.pack(fill="both", expand=True, pady=(0, 5))
@@ -456,6 +471,20 @@ btn_frame_peak = tk.Frame(frame_peak, bg=THEME_BG)
 btn_frame_peak.pack(fill="x")
 tk.Button(btn_frame_peak, text="Browse", command=browse_peak, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
 tk.Button(btn_frame_peak, text="Remove", command=remove_peak, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
+
+# [2. MFC 셋포인트 영역 - 우측 배치]
+frame_mfc = tk.LabelFrame(frame_lists, text="2. MFC 유량 제어 기록 파일 (*.csv)", bg=THEME_BG, fg=THEME_ACCENT, font=("", 10, "bold"), padx=5, pady=5)
+frame_mfc.grid(row=0, column=1, sticky="nsew", padx=5)
+
+listbox_mfc = tk.Listbox(frame_mfc, selectmode=tk.EXTENDED, height=10, relief="solid", bd=1, selectbackground=THEME_ACTION)
+listbox_mfc.pack(fill="both", expand=True, pady=(0, 5))
+listbox_mfc.drop_target_register(DND_FILES)
+listbox_mfc.dnd_bind('<<Drop>>', drop_mfc)
+
+btn_frame_mfc = tk.Frame(frame_mfc, bg=THEME_BG)
+btn_frame_mfc.pack(fill="x")
+tk.Button(btn_frame_mfc, text="Browse", command=browse_mfc, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
+tk.Button(btn_frame_mfc, text="Remove", command=remove_mfc, bg=THEME_BTN, fg=THEME_ACCENT, activebackground=THEME_BTN_ACTIVE, relief="flat", cursor="hand2", font=("", 9, "bold")).pack(side="left", expand=True, fill="x", padx=2)
 
 # [초기화 버튼 영역]
 frame_bot = tk.Frame(root, bg=THEME_BG)
