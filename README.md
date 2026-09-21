@@ -1,7 +1,8 @@
 <img width="1917" height="1017" alt="스크린샷 2026-09-18 141127" src="https://github.com/user-attachments/assets/422ea6b2-7af5-4b2c-9000-0c141c514c09" />
+
 [사용 방법 유튜브 링크. 자막 켜기](https://www.youtube.com/watch?v=necdpUIDmas)
 
-# 🚀 Easy_PeakParser v1.0.0
+# 🚀 Easy_PeakParser v1.0.1
 
 **Easy_PeakParser**는 서로 다른 장비에서 독립적으로 측정된 MFC 유량 제어 기록과 분광기 파장(Peak) 데이터를 시간(Time) 기반으로 정밀하게 동기화하고, 분석에 최적화된 엑셀 파일로 자동 가공해 주는 광학/반도체 하드웨어 데이터 전처리 올인원(All-in-One) 툴입니다.
 
