@@ -201,7 +201,6 @@ def process_data():
             fail_list.append(f"{os.path.basename(peak_file)} (시간대가 일치하는 MFC 기록 없음)")
             continue
 
-        # 어설픈 사전 필터링 제거! 실제 시간대가 맞는 블록 내에서만 0 SCCM을 판단합니다.
         blocks_to_write = []
         used_red_indices = set()
         processed_events = []
@@ -215,7 +214,6 @@ def process_data():
                     break
             
             if red_idx != -1:
-                # 파장 데이터와 MFC 제어 시간 차이가 60초 이내인 정상 데이터만 처리
                 if abs((e['time'] - data_rows[red_idx]['dt']).total_seconds()) > 60:
                     continue
                 
@@ -224,7 +222,9 @@ def process_data():
                     start_idx = max(0, red_idx - 10)
                     block = data_rows[start_idx : red_idx + 1]
                     
-                    prev_val = int(e['prev_flow']) if e['prev_flow'].is_integer() else e['prev_flow']
+                    # 부동소수점 오차 방지를 위해 소수점 첫째 자리 반올림 적용
+                    prev_val_rounded = round(e['prev_flow'], 1)
+                    prev_val = int(prev_val_rounded) if prev_val_rounded.is_integer() else prev_val_rounded
                     label = f"{e['ctrl_gas']} {prev_val} SCCM"
                     
                     blocks_to_write.append({
@@ -233,7 +233,6 @@ def process_data():
                     })
                     processed_events.append(e)
 
-                    # [핵심 로직] 성공적으로 기록된 유효 이벤트의 셋포인트가 0 SCCM이라면, 여기서 한 사이클을 완벽히 종료
                     if prev_val == 0:
                         break
 
@@ -241,7 +240,6 @@ def process_data():
             fail_list.append(f"{os.path.basename(peak_file)} (매칭된 유효 데이터 없음)")
             continue
 
-        # 최댓값과 가스 정보는 매칭에 성공한 첫 번째(시작점) 유효 데이터 기준으로 고정
         first_event = processed_events[0]
         bg_gas = first_event['bg_gas']
         bg_flow = first_event['bg_flow']
@@ -251,8 +249,13 @@ def process_data():
         
         deltas = [abs(e['curr_flow'] - e['prev_flow']) for e in processed_events if abs(e['curr_flow'] - e['prev_flow']) > 0]
         delta_val = max(set(deltas), key=deltas.count) if deltas else 0
-        delta_str = int(delta_val) if delta_val.is_integer() else delta_val
         
+        # 엑셀 상단 헤더에 표기될 변수들도 소수점 첫째 자리 반올림
+        delta_val = round(delta_val, 1)
+        bg_flow = round(bg_flow, 1)
+        max_ctrl = round(max_ctrl, 1)
+        
+        delta_str = int(delta_val) if delta_val.is_integer() else delta_val
         bg_flow_str = int(bg_flow) if bg_flow.is_integer() else bg_flow
         max_ctrl_str = int(max_ctrl) if max_ctrl.is_integer() else max_ctrl
 
@@ -443,8 +446,8 @@ THEME_ACTION = "#0078D7"
 THEME_ACTION_ACTIVE = "#005A9E" 
 
 root = TkinterDnD.Tk()
-# 버전 1.0.1 업데이트 반영
-root.title("Easy_PeakParser v1.0.1")
+# 버전 1.0.2 업데이트 반영
+root.title("Easy_PeakParser v1.0.2")
 root.geometry("720x580") 
 root.iconbitmap(resource_path("Easy_PeakParser.ico"))
 root.configure(bg=THEME_BG) 
