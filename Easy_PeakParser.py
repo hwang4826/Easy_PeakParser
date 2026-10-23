@@ -201,9 +201,10 @@ def process_data():
             fail_list.append(f"{os.path.basename(peak_file)} (시간대가 일치하는 MFC 기록 없음)")
             continue
 
-        blocks_to_write = []
+        stable_blocks = []
         used_red_indices = set()
         processed_events = []
+        max_valid_idx = -1
 
         for e in matched_events:
             red_idx = -1
@@ -220,23 +221,26 @@ def process_data():
                 if red_idx not in used_red_indices:
                     used_red_indices.add(red_idx)
                     start_idx = max(0, red_idx - 10)
-                    block = data_rows[start_idx : red_idx + 1]
                     
-                    # 부동소수점 오차 방지를 위해 소수점 첫째 자리 반올림 적용
                     prev_val_rounded = round(e['prev_flow'], 1)
                     prev_val = int(prev_val_rounded) if prev_val_rounded.is_integer() else prev_val_rounded
                     label = f"{e['ctrl_gas']} {prev_val} SCCM"
                     
-                    blocks_to_write.append({
-                        'label': label,
-                        'block': block
+                    stable_blocks.append({
+                        'start_idx': start_idx,
+                        'red_idx': red_idx,
+                        'label': label
                     })
                     processed_events.append(e)
 
+                    # 측정 사이클 유효 마지막 인덱스 업데이트
+                    max_valid_idx = red_idx
+
+                    # 0 SCCM 도달 시 측정 완전 종료 처리
                     if prev_val == 0:
                         break
 
-        if not blocks_to_write:
+        if not processed_events:
             fail_list.append(f"{os.path.basename(peak_file)} (매칭된 유효 데이터 없음)")
             continue
 
@@ -250,7 +254,6 @@ def process_data():
         deltas = [abs(e['curr_flow'] - e['prev_flow']) for e in processed_events if abs(e['curr_flow'] - e['prev_flow']) > 0]
         delta_val = max(set(deltas), key=deltas.count) if deltas else 0
         
-        # 엑셀 상단 헤더에 표기될 변수들도 소수점 첫째 자리 반올림
         delta_val = round(delta_val, 1)
         bg_flow = round(bg_flow, 1)
         max_ctrl = round(max_ctrl, 1)
@@ -306,34 +309,51 @@ def process_data():
             prev_el = el
             col_palettes[col_idx] = palette_1 if current_pal_idx == 1 else palette_2
 
-        current_row = 4
-        for b_dict in blocks_to_write:
-            label = b_dict['label']
-            block = b_dict['block']
-            
-            for i, b_row in enumerate(block):
-                is_red = (i == len(block) - 1)
-                row_label = "유량 변경" if is_red else (label if i == 0 else "")
-                
-                formatted_ts = b_row['dt'].strftime("%y%m%d %H:%M:%S.%f")[:-3]
-                clean_raw = [formatted_ts, b_row['raw'][1]] + b_row['raw'][2:]
-                
-                row_data = [row_label] + clean_raw
-                ws.append(row_data)
+        # [핵심] 안정된 블록의 정보를 미리 딕셔너리로 구성
+        row_props = {}
+        for b in stable_blocks:
+            for i in range(b['start_idx'], b['red_idx'] + 1):
+                is_red = (i == b['red_idx'])
+                is_start = (i == b['start_idx'])
+                row_label = "유량 변경" if is_red else (b['label'] if is_start else "")
+                row_props[i] = {
+                    'is_stable': True,
+                    'is_red': is_red,
+                    'label': row_label
+                }
 
-                for col_idx in range(1, len(row_data) + 1):
-                    cell = ws.cell(row=current_row, column=col_idx)
-                    cell.alignment = center_align
-                    
+        current_row = 4
+        # 처음부터 0 SCCM 종료 시점(max_valid_idx) 까지만 반복하여 엑셀에 작성
+        for i in range(max_valid_idx + 1):
+            row_data_dict = data_rows[i]
+            # 안정된 블록에 속하지 않으면 기본값(불안정)으로 처리
+            props = row_props.get(i, {'is_stable': False, 'is_red': False, 'label': ""})
+            
+            formatted_ts = row_data_dict['dt'].strftime("%y%m%d %H:%M:%S.%f")[:-3]
+            clean_raw = [formatted_ts, row_data_dict['raw'][1]] + row_data_dict['raw'][2:]
+            
+            row_data = [props['label']] + clean_raw
+            ws.append(row_data)
+
+            for col_idx in range(1, len(row_data) + 1):
+                cell = ws.cell(row=current_row, column=col_idx)
+                cell.alignment = center_align
+                
+                # 안정된 블록일 경우에만 색상 채우기 적용
+                if props['is_stable']:
                     pal = col_palettes.get(col_idx, palette_1)
-                    
-                    if is_red:
+                    if props['is_red']:
                         cell.fill = pal['event']
                         cell.font = pal['font_event']
                     else:
                         cell.fill = pal['normal']
                         if col_idx == 1: cell.font = font_bold
-                current_row += 1
+            
+            # 불안정한 구간은 엑셀 행 숨기기 적용
+            if not props['is_stable']:
+                ws.row_dimensions[current_row].hidden = True
+                
+            current_row += 1
 
         ws.column_dimensions['A'].width = 15
         ws.column_dimensions['B'].width = 21
@@ -446,8 +466,8 @@ THEME_ACTION = "#0078D7"
 THEME_ACTION_ACTIVE = "#005A9E" 
 
 root = TkinterDnD.Tk()
-# 버전 1.0.2 업데이트 반영
-root.title("Easy_PeakParser v1.0.2")
+# 버전 1.1.0 업데이트 반영
+root.title("Easy_PeakParser v1.1.0")
 root.geometry("720x580") 
 root.iconbitmap(resource_path("Easy_PeakParser.ico"))
 root.configure(bg=THEME_BG) 

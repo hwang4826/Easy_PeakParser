@@ -26,7 +26,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Easy_PeakParser_v1.0.2',
+    name='Easy_PeakParser_v1.1.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
